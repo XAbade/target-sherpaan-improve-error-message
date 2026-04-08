@@ -34,6 +34,7 @@ class PurchaseOrderSink(HotglueSink):
                 th.Property("product_remoteId", th.StringType, required=True),
                 th.Property("supplier_item_code", th.StringType),
                 th.Property("quantity", th.NumberType, required=True),
+                th.Property("unit_price", th.NumberType, required=True),
             )
         ), required=True),
     ).to_dict()
@@ -155,6 +156,14 @@ class PurchaseOrderSink(HotglueSink):
         
         purchase_lines_xml = ""
         for line in line_items:
+            unit_price_for_soap = line.get("unit_price")
+            
+            # Skip lines without unit_price (required field)
+            if unit_price_for_soap is None:
+                item_code = line.get("product_remoteId", "")
+                self.logger.warning(f"Skipping line item {item_code}: missing required unit_price")
+                continue
+            
             item_code_for_soap = line.get("product_remoteId", "")
             supplier_item_code_for_soap = line.get("supplier_item_code", item_code_for_soap)
             quantity_ordered_for_soap = line.get("quantity", 0)
@@ -163,6 +172,7 @@ class PurchaseOrderSink(HotglueSink):
         <ItemCode>{escape(str(item_code_for_soap))}</ItemCode>
         <SupplierItemCode>{escape(str(supplier_item_code_for_soap))}</SupplierItemCode>
         <QuantityOrdered>{escape(str(quantity_ordered_for_soap))}</QuantityOrdered>
+        <Price>{escape(str(unit_price_for_soap))}</Price>
         <ExpectedDate>{formatted_date}</ExpectedDate>
       </ChangePurchaseLine>
 """
