@@ -90,6 +90,9 @@ class SherpaClient:
                 self.logger.error(f"HTTP {response.status_code} error for {service_name}")
                 self.logger.error(f"Response headers: {dict(response.headers)}")
                 self.logger.error(f"Response body (first 1000 chars): {response.text[:1000]}")
+                soap_error_message = self._extract_soap_fault_message(response.text)
+                if soap_error_message:
+                    raise ValueError(f"SOAP Fault from {service_name}: {soap_error_message}")
             response.raise_for_status()
             
             parsed_response = self._parse_soap_response(response.text, service_name)
@@ -170,3 +173,47 @@ class SherpaClient:
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {"raw_response": xml_response}
+
+
+    def _extract_soap_fault_message(self, xml_response: str) -> Optional[str]:
+        """Extract the ErrorMessage from a SOAP Fault response.
+
+        Args:
+            xml_response: Raw XML response string
+
+        Returns:
+            Human-readable error message, or None if not found
+        """
+        try:
+            xml_dict = xmltodict.parse(xml_response)
+            # Walk through possible envelope namespace keys
+            for env_key in ["soap:Envelope", "soap12:Envelope", "Envelope"]:
+                if env_key not in xml_dict:
+                    continue
+                envelope = xml_dict[env_key]
+                for body_key in ["soap:Body", "soap12:Body", "Body"]:
+                    if body_key not in envelope:
+                        continue
+                    body = envelope[body_key]
+                    # Look for Fault under various namespace keys
+                    for fault_key in ["soap:Fault", "soap12:Fault", "Fault"]:
+                        if fault_key not in body:
+                            continue
+                        fault = body[fault_key]
+                        # <detail><Error><ErrorMessage>...</ErrorMessage></Error></detail>
+                        detail = fault.get("detail", {})
+                        if isinstance(detail, dict):
+                            error_block = detail.get("Error", {})
+                            if isinstance(error_block, dict):
+                                msg = error_block.get("ErrorMessage")
+                                if msg:
+                                    return str(msg)
+                        # Fallback: soap:Reason / soap:Text
+                        reason = fault.get("soap:Reason") or fault.get("Reason", {})
+                        if isinstance(reason, dict):
+                            text = reason.get("soap:Text") or reason.get("Text")
+                            if text:
+                                return str(text) if isinstance(text, str) else str(text.get("#text", text))
+        except Exception as e:
+            self.logger.debug(f"Could not parse SOAP fault: {e}")
+        return None
