@@ -107,9 +107,9 @@ class PurchaseOrderSink(HotglueSink):
     def _build_add_ordered_purchase_envelope(
         self,
         supplier_code: str,
-        reference: str,
+        reference: Optional[str],
         warehouse_code: str,
-        external_order_number: str
+        external_order_number: Optional[str]
     ) -> str:
         """Build SOAP envelope for AddOrderedPurchaseWithExternalOrderNumber.
 
@@ -247,8 +247,19 @@ class PurchaseOrderSink(HotglueSink):
 
         try:
             supplier_code_for_soap = record["supplier_remoteId"]
-            reference_for_soap = str(record["id"])
-            external_order_number_for_soap = str(record["id"])
+            buy_order_id = str(record["id"])
+
+            export_to = self.config.get("export_buyOrderId_to")
+            if export_to == "reference":
+                reference_for_soap = buy_order_id
+                external_order_number_for_soap = None
+            elif export_to == "externalOrderNumber":
+                reference_for_soap = None
+                external_order_number_for_soap = buy_order_id
+            else:
+                reference_for_soap = buy_order_id
+                external_order_number_for_soap = buy_order_id
+            
             warehouse_code_for_soap = record.get("warehouse_code") or self.config.get("export_buyOrder_warehouse")
             if not warehouse_code_for_soap:
                 raise ValueError("warehouse_code is required but not found in record or config (export_buyOrder_warehouse)")
