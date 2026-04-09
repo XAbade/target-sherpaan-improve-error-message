@@ -108,7 +108,8 @@ class PurchaseOrderSink(HotglueSink):
         self,
         supplier_code: str,
         reference: str,
-        warehouse_code: str
+        warehouse_code: str,
+        external_order_number: str
     ) -> str:
         """Build SOAP envelope for AddOrderedPurchaseWithExternalOrderNumber.
 
@@ -247,6 +248,7 @@ class PurchaseOrderSink(HotglueSink):
         try:
             supplier_code_for_soap = record["supplier_remoteId"]
             reference_for_soap = str(record["id"])
+            external_order_number_for_soap = str(record["id"])
             warehouse_code_for_soap = record.get("warehouse_code") or self.config.get("export_buyOrder_warehouse")
             if not warehouse_code_for_soap:
                 raise ValueError("warehouse_code is required but not found in record or config (export_buyOrder_warehouse)")
@@ -276,7 +278,7 @@ class PurchaseOrderSink(HotglueSink):
                 supplier_code=supplier_code_for_soap,
                 reference=reference_for_soap,
                 warehouse_code=warehouse_code_for_soap,
-                external_order_number=reference_for_soap
+                external_order_number=external_order_number_for_soap
             )
 
             add_response = self.client.call_soap_service(
