@@ -48,6 +48,12 @@ class TargetSherpaan(TargetHotglue):
             description="Request timeout in seconds",
             default=300,
         ),
+        th.Property(
+            "export_buyOrderId_to",
+            th.StringType,
+            required=False,
+            description="Defines the attribute to where we will send OptiplyID. Usually: reference or externalOrderNumber",
+        )
     ).to_dict()
 
     def get_sinks(self) -> List[sinks.PurchaseOrderSink]:

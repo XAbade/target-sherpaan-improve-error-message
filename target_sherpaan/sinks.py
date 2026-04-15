@@ -110,7 +110,7 @@ class PurchaseOrderSink(HotglueSink):
         reference: str,
         warehouse_code: str
     ) -> str:
-        """Build SOAP envelope for AddOrderedPurchase.
+        """Build SOAP envelope for AddOrderedPurchaseWithExternalOrderNumber.
 
         Args:
             supplier_code: Supplier code
@@ -121,15 +121,24 @@ class PurchaseOrderSink(HotglueSink):
             SOAP envelope XML string
         """
         security_code = self.config["security_code"]
+        export_to = self.config.get("export_buyOrderId_to")
+
+        if export_to == "reference":
+            id_xml = f"      <reference>{escape(reference)}</reference>"
+        elif export_to == "externalOrderNumber":
+            id_xml = f"      <externalOrderNumber>{escape(reference)}</externalOrderNumber>"
+        else:
+            id_xml = f"      <reference>{escape(reference)}</reference>\n      <externalOrderNumber>{escape(reference)}</externalOrderNumber>"
+
         return f"""<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
   <soap12:Body>
-    <AddOrderedPurchase xmlns="http://sherpa.sherpaan.nl/">
+    <AddOrderedPurchaseWithExternalOrderNumber xmlns="http://sherpa.sherpaan.nl/">
       <securityCode>{escape(str(security_code))}</securityCode>
       <supplierCode>{escape(str(supplier_code))}</supplierCode>
-      <reference>{escape(str(reference))}</reference>
+{id_xml}
       <warehouseCode>{escape(str(warehouse_code))}</warehouseCode>
-    </AddOrderedPurchase>
+    </AddOrderedPurchaseWithExternalOrderNumber>
   </soap12:Body>
 </soap12:Envelope>"""
 
@@ -142,7 +151,7 @@ class PurchaseOrderSink(HotglueSink):
         """Build SOAP envelope for ChangePurchase2.
 
         Args:
-            purchase_order_number: Purchase order number from AddOrderedPurchase
+            purchase_order_number: Purchase order number from AddOrderedPurchaseWithExternalOrderNumber
             line_items: List of line item dictionaries
             created_at: Expected date from order level (used for all lines)
 
@@ -190,7 +199,7 @@ class PurchaseOrderSink(HotglueSink):
 </soap12:Envelope>"""
 
     def _extract_purchase_order_number(self, response: Dict[str, Any]) -> Optional[str]:
-        """Extract purchase order number from AddOrderedPurchase response.
+        """Extract purchase order number from AddOrderedPurchaseWithExternalOrderNumber response.
 
         Args:
             response: Parsed SOAP response
@@ -201,7 +210,7 @@ class PurchaseOrderSink(HotglueSink):
         # Try different possible response structures
         if isinstance(response, dict):
             # First, look for ResponseValue which contains the actual purchase order number
-            # Response structure: {'AddOrderedPurchaseResult': {'ResponseValue': '600010', 'ResponseTime': '61'}}
+            # Response structure: {'AddOrderedPurchaseWithExternalOrderNumberResult': {'ResponseValue': '600010', 'ResponseTime': '61'}}
             for key, value in response.items():
                 if isinstance(value, dict):
                     # Check for ResponseValue in nested dicts
@@ -277,18 +286,18 @@ class PurchaseOrderSink(HotglueSink):
             )
 
             add_response = self.client.call_soap_service(
-                service_name="AddOrderedPurchase",
+                service_name="AddOrderedPurchaseWithExternalOrderNumber",
                 soap_envelope=add_envelope
             )
 
-            self.logger.debug(f"AddOrderedPurchase response: {add_response}")
+            self.logger.debug(f"AddOrderedPurchaseWithExternalOrderNumber response: {add_response}")
 
             # Extract purchase order number from response
             purchase_order_number = self._extract_purchase_order_number(add_response)
 
             if not purchase_order_number:
                 self.logger.error(
-                    f"Failed to extract purchase order number from AddOrderedPurchase response"
+                    f"Failed to extract purchase order number from AddOrderedPurchaseWithExternalOrderNumber response"
                 )
                 self.logger.error(f"Full response structure: {add_response}")
                 self.logger.error(f"Response type: {type(add_response)}")
