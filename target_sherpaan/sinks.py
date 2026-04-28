@@ -330,9 +330,11 @@ class PurchaseOrderSink(HotglueSink):
 
         except Exception as e:
             import traceback
-            self.logger.error(f"Error processing record {record.get('id', 'unknown')}: {e}")
+            from tenacity import RetryError
+            actual_error = e.last_attempt.exception() if isinstance(e, RetryError) else e
+            self.logger.error(f"Error processing record {record.get('id', 'unknown')}: {actual_error}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             state_updates["success"] = False
-            state_updates["error"] = str(e)
+            state_updates["error"] = str(actual_error)
             status = False
             return purchase_order_number, status, state_updates
