@@ -315,10 +315,36 @@ class PurchaseOrderSink(HotglueSink):
                 created_at=created_at
             )
 
-            change_response = self.client.call_soap_service(
-                service_name="ChangePurchase2",
-                soap_envelope=change_envelope
-            )
+            # Retry loop: if Sherpa reports an unknown item code, drop that line and retry
+            max_item_retries = len(line_items)
+            for attempt in range(max_item_retries + 1):
+                try:
+                    change_response = self.client.call_soap_service(
+                        service_name="ChangePurchase2",
+                        soap_envelope=change_envelope
+                    )
+                    break  # success, exit retry loop
+                except Exception as change_err:
+                    from tenacity import RetryError
+                    actual = change_err.last_attempt.exception() if isinstance(change_err, RetryError) else change_err
+                    error_str = str(actual)
+                    unknown_match = re.search(r"Unknown item code (\S+)", error_str)
+                    if unknown_match and attempt < max_item_retries:
+                        bad_code = unknown_match.group(1)
+                        self.logger.warning(
+                            f"Removing unknown item code '{bad_code}' from order {purchase_order_number} and retrying"
+                        )
+                        line_items = [l for l in line_items if str(l.get("product_remoteId", "")) != bad_code]
+                        if not line_items:
+                            self.logger.error(f"All line items removed for order {purchase_order_number}, skipping ChangePurchase2")
+                            break
+                        change_envelope = self._build_change_purchase2_envelope(
+                            purchase_order_number=purchase_order_number,
+                            line_items=line_items,
+                            created_at=created_at
+                        )
+                    else:
+                        raise
 
             self.logger.info(
                 f"Successfully processed purchase order {purchase_order_number} "
